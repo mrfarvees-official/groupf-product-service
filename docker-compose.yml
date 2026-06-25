@@ -1,0 +1,47 @@
+services:
+  product_service:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    container_name: groupf_product_service
+    ports:
+      - "3001:3001"
+    environment:
+      SERVER_PORT: 3001
+      POSTGRES_HOST: postgres
+      POSTGRES_PORT: 5432
+      POSTGRES_DB: product_db
+      POSTGRES_USER: groupf
+      POSTGRES_PASSWORD: groupf
+    depends_on:
+      postgres:
+        condition: service_healthy
+    networks:
+      - product_service_network
+
+  postgres:
+    image: postgres:16-alpine
+    container_name: product_service_postgres
+    restart: always
+    ports:
+      - "5433:5432"
+    environment:
+      POSTGRES_DB: product_db
+      POSTGRES_USER: groupf
+      POSTGRES_PASSWORD: groupf
+    volumes:
+      - postgres_product_data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U groupf -d product_db"]
+      interval: 5s
+      timeout: 5s
+      retries: 10
+    networks:
+      - product_service_network
+
+volumes:
+  postgres_product_data:
+
+networks:
+  product_service_network:
+    driver: bridge
