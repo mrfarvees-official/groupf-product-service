@@ -1,0 +1,43 @@
+name: Deploy App1 to Azure VM
+
+on:
+  push:
+    branches:
+      - main
+
+jobs:
+  deploy:
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Deploy App1
+        uses: appleboy/ssh-action@v1.0.3
+        with:
+          host: ${{ secrets.AZURE_HOST }}
+          username: ${{ secrets.AZURE_USER }}
+          key: ${{ secrets.AZURE_SSH_KEY }}
+          script: |
+            APP_DIR="/home/azureuser/apps/app1"
+            REPO_URL="https://github.com/YOUR_USERNAME/YOUR_APP1_REPO.git"
+
+            mkdir -p /home/azureuser/apps
+
+            if [ ! -d "$APP_DIR/.git" ]; then
+              git clone "$REPO_URL" "$APP_DIR"
+            fi
+
+            cd "$APP_DIR"
+            git pull origin main
+
+            docker stop app1 || true
+            docker rm app1 || true
+
+            docker build -t app1-image .
+            docker run -d \
+              --name app1 \
+              --restart always \
+              -p 3001:3001 \
+              app1-image
+
+            docker image prune -f
+            docker ps
