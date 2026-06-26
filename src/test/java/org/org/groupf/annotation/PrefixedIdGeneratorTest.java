@@ -59,4 +59,5 @@ class PrefixedIdGeneratorTest {
 
         assertEquals(EnumSet.of(EventType.INSERT), eventTypes);
     }
+
 }
