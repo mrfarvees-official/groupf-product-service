@@ -1,24 +1,4 @@
 services:
-  product_service:
-    build:
-      context: .
-      dockerfile: Dockerfile
-    container_name: groupf_product_service
-    ports:
-      - "3001:3001"
-    environment:
-      SERVER_PORT: 3001
-      POSTGRES_HOST: postgres
-      POSTGRES_PORT: 5432
-      POSTGRES_DB: product_db
-      POSTGRES_USER: groupf
-      POSTGRES_PASSWORD: groupf
-    depends_on:
-      postgres:
-        condition: service_healthy
-    networks:
-      - product_service_network
-
   postgres:
     image: postgres:16-alpine
     container_name: product_service_postgres
@@ -36,6 +16,28 @@ services:
       interval: 5s
       timeout: 5s
       retries: 10
+    networks:
+      - product_service_network
+
+  product_service:
+    image: farvees/groupf-product-service:latest
+    container_name: groupf_product_service
+    restart: always
+    ports:
+      - "3001:3001"
+    environment:
+      SERVER_PORT: 3001
+      POSTGRES_HOST: postgres
+      POSTGRES_PORT: 5432
+      POSTGRES_DB: product_db
+      POSTGRES_USER: groupf
+      POSTGRES_PASSWORD: groupf
+      SPRING_DATASOURCE_URL: jdbc:postgresql://postgres:5432/product_db
+      SPRING_DATASOURCE_USERNAME: groupf
+      SPRING_DATASOURCE_PASSWORD: groupf
+    depends_on:
+      postgres:
+        condition: service_healthy
     networks:
       - product_service_network
 

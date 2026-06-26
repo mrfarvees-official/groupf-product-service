@@ -10,39 +10,6 @@ jobs:
     runs-on: ubuntu-latest
 
     steps:
-      - name: Show repo
-        run: |
-          echo "Running repo is: $GITHUB_REPOSITORY"
-          echo "Running branch is: $GITHUB_REF_NAME"
-
-      - name: Checkout code
-        uses: actions/checkout@v4
-
-      - name: Check secrets
-        env:
-          AZURE_HOST: ${{ secrets.AZURE_HOST }}
-          AZURE_USER: ${{ secrets.AZURE_USER }}
-          DOCKER_USERNAME: ${{ secrets.DOCKER_USERNAME }}
-          AZURE_SSH_KEY: ${{ secrets.AZURE_SSH_KEY }}
-          DOCKER_PASSWORD: ${{ secrets.DOCKER_PASSWORD }}
-        run: |
-          if [ -z "$AZURE_HOST" ]; then echo "AZURE_HOST missing"; exit 1; else echo "AZURE_HOST exists"; fi
-          if [ -z "$AZURE_USER" ]; then echo "AZURE_USER missing"; exit 1; else echo "AZURE_USER exists"; fi
-          if [ -z "$DOCKER_USERNAME" ]; then echo "DOCKER_USERNAME missing"; exit 1; else echo "DOCKER_USERNAME exists"; fi
-          if [ -z "$AZURE_SSH_KEY" ]; then echo "AZURE_SSH_KEY missing"; exit 1; else echo "AZURE_SSH_KEY exists"; fi
-          if [ -z "$DOCKER_PASSWORD" ]; then echo "DOCKER_PASSWORD missing"; exit 1; else echo "DOCKER_PASSWORD exists"; fi
-
-      - name: Login to Docker Hub
-        uses: docker/login-action@v3
-        with:
-          username: ${{ secrets.DOCKER_USERNAME }}
-          password: ${{ secrets.DOCKER_PASSWORD }}
-
-      - name: Build and push Docker image
-        run: |
-          docker build -t ${{ secrets.DOCKER_USERNAME }}/groupf-product-service:latest .
-          docker push ${{ secrets.DOCKER_USERNAME }}/groupf-product-service:latest
-
       - name: Deploy to Azure VM
         uses: appleboy/ssh-action@v1.0.3
         with:
@@ -51,18 +18,64 @@ jobs:
           key: ${{ secrets.AZURE_SSH_KEY }}
           port: 22
           script: |
+            mkdir -p ~/groupf-product-service
+            cd ~/groupf-product-service
+
+            cat > docker-compose.yml << 'EOF'
+            services:
+              postgres:
+                image: postgres:16-alpine
+                container_name: product_service_postgres
+                restart: always
+                ports:
+                  - "5433:5432"
+                environment:
+                  POSTGRES_DB: product_db
+                  POSTGRES_USER: groupf
+                  POSTGRES_PASSWORD: groupf
+                volumes:
+                  - postgres_product_data:/var/lib/postgresql/data
+                healthcheck:
+                  test: ["CMD-SHELL", "pg_isready -U groupf -d product_db"]
+                  interval: 5s
+                  timeout: 5s
+                  retries: 10
+                networks:
+                  - product_service_network
+
+              product_service:
+                image: farvees/groupf-product-service:latest
+                container_name: groupf_product_service
+                restart: always
+                ports:
+                  - "3001:3001"
+                environment:
+                  SERVER_PORT: 3001
+                  POSTGRES_HOST: postgres
+                  POSTGRES_PORT: 5432
+                  POSTGRES_DB: product_db
+                  POSTGRES_USER: groupf
+                  POSTGRES_PASSWORD: groupf
+                  SPRING_DATASOURCE_URL: jdbc:postgresql://postgres:5432/product_db
+                  SPRING_DATASOURCE_USERNAME: groupf
+                  SPRING_DATASOURCE_PASSWORD: groupf
+                depends_on:
+                  postgres:
+                    condition: service_healthy
+                networks:
+                  - product_service_network
+
+            volumes:
+              postgres_product_data:
+
+            networks:
+              product_service_network:
+                driver: bridge
+            EOF
+
             echo "${{ secrets.DOCKER_PASSWORD }}" | sudo docker login -u "${{ secrets.DOCKER_USERNAME }}" --password-stdin
 
-            sudo docker pull ${{ secrets.DOCKER_USERNAME }}/groupf-product-service:latest
-
-            sudo docker stop groupf-product-service || true
-            sudo docker rm groupf-product-service || true
-
-            sudo docker run -d \
-              --name groupf-product-service \
-              --restart always \
-              -p 3001:3001 \
-              ${{ secrets.DOCKER_USERNAME }}/groupf-product-service:latest
-
+            sudo docker compose pull
+            sudo docker compose up -d
             sudo docker image prune -f
             sudo docker ps
